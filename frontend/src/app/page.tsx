@@ -109,7 +109,7 @@ export default function Home() {
         <div className="wrap nav">
           <div className="brand">
             <BrandGlyph />
-            WhisperStell
+            ShellPay
           </div>
           <nav className="nav-links">
             <a href="#how" className="hide-sm">How it works</a>
@@ -445,7 +445,7 @@ export default function Home() {
         <div className="wrap foot">
           <div className="brand">
             <BrandGlyph />
-            WhisperStell
+            ShellPay
           </div>
           <div className="meta">Non-custodial · pre-audit · testnet only — not for real funds yet</div>
           <div className="meta">

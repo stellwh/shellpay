@@ -1,10 +1,10 @@
-# WhisperStell
+# ShellPay
 
 **Trustless Multi-Payer Invoices on Stellar**
 
-WhisperStell is a decentralized payment-splitting protocol built on **Stellar using Soroban smart contracts**. It lets individuals, teams, and communities create shared invoices where multiple payers each fund a share, and the contract routes stablecoins to every recipient — or refunds every payer — fully on-chain.
+ShellPay is a decentralized payment-splitting protocol built on **Stellar using Soroban smart contracts**. It lets individuals, teams, and communities create shared invoices where multiple payers each fund a share, and the contract routes stablecoins to every recipient — or refunds every payer — fully on-chain.
 
-The project solves the problem of trusting a middleman to hold shared money. Today, any multi-party payment — a freelance team invoicing a client, friends splitting a trip, a DAO paying contributors, family pooling a remittance — depends on a custodial platform or one trusted person holding the pot, taking a cut, moving slowly, and able to freeze or claw back funds. WhisperStell replaces that custodian with a Soroban contract: funds are escrowed under rules anyone can read, pay out only when the invoice is fully funded, and refund automatically if it isn't. Users save and settle in a dollar-denominated stablecoin (USDC) as a hedge against local-currency depreciation, and cash in/out in local currency via Stellar anchors. WhisperStell is designed for developers, contributors, and financial communities building open, composable payments infrastructure on low-fee, fast-finality blockchain primitives.
+The project solves the problem of trusting a middleman to hold shared money. Today, any multi-party payment — a freelance team invoicing a client, friends splitting a trip, a DAO paying contributors, family pooling a remittance — depends on a custodial platform or one trusted person holding the pot, taking a cut, moving slowly, and able to freeze or claw back funds. ShellPay replaces that custodian with a Soroban contract: funds are escrowed under rules anyone can read, pay out only when the invoice is fully funded, and refund automatically if it isn't. Users save and settle in a dollar-denominated stablecoin (USDC) as a hedge against local-currency depreciation, and cash in/out in local currency via Stellar anchors. ShellPay is designed for developers, contributors, and financial communities building open, composable payments infrastructure on low-fee, fast-finality blockchain primitives.
 
 ---
 
@@ -25,7 +25,7 @@ The project solves the problem of trusting a middleman to hold shared money. Tod
 
 ## 🔑 Onboarding & On/Off-Ramps
 
-WhisperStell is built so mainstream users never have to touch crypto mechanics:
+ShellPay is built so mainstream users never have to touch crypto mechanics:
 
 - **Passkey smart wallets** — accounts are Soroban smart contracts signed with device biometrics (WebAuthn / secp256r1). No seed phrases. Integrate with `passkey-kit` or an OpenZeppelin smart-account SDK.
 - **Sponsored (gasless) fees** — a relayer pays transaction fees so a payer needs only USDC, no XLM, to fund their first share.
@@ -38,7 +38,7 @@ WhisperStell is built so mainstream users never have to touch crypto mechanics:
 ## 🏗 Architecture Overview
 
 - **Frontend (`apps/web`)**
-  Next.js application for interacting with WhisperStell smart contracts. Provides a user interface for creating invoices, funding shares, tracking funding progress, withdrawing payouts, and onboarding via passkey smart wallets.
+  Next.js application for interacting with ShellPay smart contracts. Provides a user interface for creating invoices, funding shares, tracking funding progress, withdrawing payouts, and onboarding via passkey smart wallets.
 
 - **Backend (`apps/api`)**
   Node.js API for off-chain services such as indexing contract events, sending notifications, managing invoice metadata, aggregating creator analytics, and orchestrating anchor on/off-ramps.
@@ -58,7 +58,7 @@ contracts/
 └── policy/          # Reusable auth rules (limits, timelocks) shared with the smart-wallet layer.
 ```
 
-> **Current state:** the repo ships an early single-crate contract in `contracts/whisperstell` (group + role anchoring) that is being refactored toward the layout above. Treat the module split as the target design.
+> **Current state:** the repo ships an early single-crate contract in `contracts/shellpay` (group + role anchoring) that is being refactored toward the layout above. Treat the module split as the target design.
 
 ---
 
@@ -103,8 +103,8 @@ Before you begin, ensure you have the following installed:
 ## 📦 1. Clone the Repository
 
 ```bash
-git clone https://github.com/your-org/whisperstell.git
-cd whisperstell
+git clone https://github.com/your-org/shellpay.git
+cd shellpay
 ```
 
 ---
@@ -173,7 +173,7 @@ cargo build --target wasm32-unknown-unknown --release
 
 ```bash
 stellar contract deploy \
-  --wasm target/wasm32-unknown-unknown/release/whisperstell.wasm \
+  --wasm target/wasm32-unknown-unknown/release/shellpay.wasm \
   --source alice \
   --network testnet
 ```
@@ -223,7 +223,7 @@ ANCHOR_HOME_DOMAIN=your-anchor-domain
 ANCHOR_ASSET_CODE=USDC
 
 # Database (if using)
-DATABASE_URL=postgresql://user:password@localhost:5432/whisperstell
+DATABASE_URL=postgresql://user:password@localhost:5432/shellpay
 
 # Optional
 REDIS_URL=redis://localhost:6379
@@ -358,7 +358,7 @@ npm run test:integration
 
 ## 🔒 Trust & Security Model
 
-WhisperStell is **minimally trusted, not zero-trust** — being explicit about this is the point.
+ShellPay is **minimally trusted, not zero-trust** — being explicit about this is the point.
 
 **Enforced by the contract (no trust required):**
 
@@ -379,13 +379,13 @@ WhisperStell is **minimally trusted, not zero-trust** — being explicit about t
 
 ## 💼 Business Model
 
-WhisperStell's fees are transparent and on-chain:
+ShellPay's fees are transparent and on-chain:
 
 - **Small settlement fee** taken only when an invoice successfully releases — a percentage of the routed amount, never of escrowed principal held for refund.
 - **Optional per-invoice / template fee** for advanced features like subscriptions and multi-sig.
 - **Volume-based discounts** for high-volume creators.
 
-No token is required to use WhisperStell. Any future governance mechanism would be introduced only after real usage exists.
+No token is required to use ShellPay. Any future governance mechanism would be introduced only after real usage exists.
 
 ---
 
