@@ -1,261 +1,475 @@
-# StellarSplit
+# WhisperStell
 
 **Trustless Multi-Payer Invoices on Stellar**
-Split a bill. Fund it together. Settle in one atomic transaction — or get refunded automatically.
+
+WhisperStell is a decentralized payment-splitting protocol built on **Stellar using Soroban smart contracts**. It lets individuals, teams, and communities create shared invoices where multiple payers each fund a share, and the contract routes stablecoins to every recipient — or refunds every payer — fully on-chain.
+
+The project solves the problem of trusting a middleman to hold shared money. Today, any multi-party payment — a freelance team invoicing a client, friends splitting a trip, a DAO paying contributors, family pooling a remittance — depends on a custodial platform or one trusted person holding the pot, taking a cut, moving slowly, and able to freeze or claw back funds. WhisperStell replaces that custodian with a Soroban contract: funds are escrowed under rules anyone can read, pay out only when the invoice is fully funded, and refund automatically if it isn't. Users save and settle in a dollar-denominated stablecoin (USDC) as a hedge against local-currency depreciation, and cash in/out in local currency via Stellar anchors. WhisperStell is designed for developers, contributors, and financial communities building open, composable payments infrastructure on low-fee, fast-finality blockchain primitives.
 
 ---
 
-## What is StellarSplit?
+## Core Features
 
-StellarSplit lets anyone create on-chain invoices on Stellar where multiple payers each owe a share. The moment an invoice is fully funded, the Soroban smart contract automatically routes USDC to every recipient in a single transaction. If the deadline passes unfunded, all contributors are automatically refunded.
-
-No middleman. No trust required. Just code.
+- Non-custodial escrow via Soroban smart contracts — funds move only under contract rules you can read
+- Multi-payer invoices — many payers each fund their share into one invoice
+- Trustless routing — recipients are paid the moment the invoice is fully funded
+- Pull-based payouts — each recipient withdraws their own share, so one un-receivable recipient can't block the rest
+- Automatic, permissionless refunds — if the deadline passes unfunded, every payer reclaims their exact contribution
+- Advanced release modes — N-of-M multi-sig approvals, staged time-locked tranches, oracle-gated and scheduled release
+- Dollar-denominated by default — settle in USDC, cash in and out in local currency via Stellar anchors
+- Passwordless onboarding with passkey smart wallets and sponsored fees
+- Web interface for seamless contract interaction
+- Detailed settlement reference: `SETTLEMENT_REFERENCE.md`
 
 ---
 
-## How it works
+## 🔑 Onboarding & On/Off-Ramps
 
+WhisperStell is built so mainstream users never have to touch crypto mechanics:
+
+- **Passkey smart wallets** — accounts are Soroban smart contracts signed with device biometrics (WebAuthn / secp256r1). No seed phrases. Integrate with `passkey-kit` or an OpenZeppelin smart-account SDK.
+- **Sponsored (gasless) fees** — a relayer pays transaction fees so a payer needs only USDC, no XLM, to fund their first share.
+- **Social recovery (optional)** — recovery signers so a lost device doesn't mean lost access (disclosed as a trust trade-off).
+- **Local-currency ramps** — via the SDF Anchor Platform using SEP-24 / SEP-6 for hosted deposit and withdrawal, and SEP-38 for quoted local-currency ↔ USDC conversion. Anchors also handle KYC at the fiat boundary, keeping the protocol layer permissionless.
+- **Any-asset contributions** — payers can fund in any Stellar asset via path payments; recipients always receive USDC.
+
+---
+
+## 🏗 Architecture Overview
+
+- **Frontend (`apps/web`)**
+  Next.js application for interacting with WhisperStell smart contracts. Provides a user interface for creating invoices, funding shares, tracking funding progress, withdrawing payouts, and onboarding via passkey smart wallets.
+
+- **Backend (`apps/api`)**
+  Node.js API for off-chain services such as indexing contract events, sending notifications, managing invoice metadata, aggregating creator analytics, and orchestrating anchor on/off-ramps.
+
+- **Smart Contracts (`contracts/`)**
+  Soroban smart contracts written in Rust that manage all invoicing logic, fund custody, release rules, and refunds. Oracle and cross-chain integrations live behind swappable adapters so the custody core can be audited independently.
+
+### Contract Layout
+
+```text
+contracts/
+├── invoice/         # Core: create invoice, escrow shares, pull payouts, deadline refunds. Holds USDC.
+├── multisig/        # N-of-M co-signer release approvals.
+├── oracle_adapter/  # OPTIONAL, opt-in. Oracle-gated / priced release (swappable).
+├── registry/        # Factory + directory of invoices. Emits events for the indexer.
+├── fee_collector/   # Transparent, on-chain protocol fees.
+└── policy/          # Reusable auth rules (limits, timelocks) shared with the smart-wallet layer.
 ```
-1. Creator makes an invoice
-   └── Sets recipients, amounts, deadline, and optional rules
 
-2. Payers send their share
-   └── USDC is locked in the Soroban smart contract
-
-3. Invoice fully funded
-   └── Contract instantly routes USDC to every recipient
-
-4. Deadline passes unfunded?
-   └── Every payer gets their money back automatically
-```
-
-**Advanced modes:** require co-signer approvals before release, use an oracle to confirm off-chain conditions, set staged tranches, or schedule an automatic release timestamp.
+> **Current state:** the repo ships an early single-crate contract in `contracts/whisperstell` (group + role anchoring) that is being refactored toward the layout above. Treat the module split as the target design.
 
 ---
 
-## Core Architecture
+## 📁 Repository Structure
 
-```
-Payer Wallets (Freighter / Albedo / LOBSTR)
-        │
-        ▼
-   Auth Layer (Stellar Keypair Signature)
-        │
-        ▼
-  StellarSplit Soroban Contract  ◄── holds escrowed USDC
-        │
-        ├──► USDC token contract (SAC)  — transfers in/out
-        ├──► Price oracle contract       — dynamic funding targets
-        ├──► Bridge relayer              — cross-chain contributions
-        │
-        └──► On-chain events             — indexed by frontend/analytics
-```
-
-Funds are escrowed in the contract, never held by a server or the creator. Every state transition — contribution, release, refund — is enforced by the contract and emitted as an event.
-
----
-
-## Feature Set
-
-### Core Settlement
-
-| Feature                  | Description                                                                                       |
-| ------------------------ | ------------------------------------------------------------------------------------------------- |
-| Automatic USDC routing   | Recipients are paid the moment the invoice is fully funded — one atomic multi-party transfer.      |
-| Escrowed contributions   | Each payer's USDC is locked in the contract until release conditions are met.                      |
-| Deadline refunds         | If an invoice isn't fully funded by its deadline, every payer can reclaim their exact contribution.|
-| Partial-fund tracking    | The contract tracks each payer's share and the running total toward the funding target.            |
-| On-chain invoice state   | Draft, Funding, Funded, Released, Refunded, Cancelled — all transitions verifiable on-ledger.       |
-
-### Advanced Release Modes
-
-| Feature                | Description                                                                                          |
-| ---------------------- | ---------------------------------------------------------------------------------------------------- |
-| Multi-sig release      | Require N-of-M co-signer approvals before funds move. No single party can release escrow.            |
-| Staged tranches        | Release funds in graduated, time-locked instalments instead of one lump sum.                         |
-| Oracle-priced invoices | Funding target is set dynamically by an on-chain price oracle (e.g. invoice a fiat amount in USDC).  |
-| Scheduled release      | Set an automatic release timestamp; funds move once the ledger passes it, if conditions hold.        |
-| Milestone conditions   | Gate release on an off-chain condition confirmed by a trusted oracle or co-signer set.               |
-
-### Privacy & Scale
-
-| Feature                     | Description                                                                                            |
-| --------------------------- | ------------------------------------------------------------------------------------------------------ |
-| Confidential payments       | Hide individual payment amounts using commitments; reveal and verify at settlement.                    |
-| Payment channels            | Stream micro-payments toward an invoice off-chain, settling on-chain without per-transaction fees.     |
-| Cross-chain bridge payments | Accept contributions relayed from other chains through a trusted bridge relayer.                        |
-
-### Creator Tooling
-
-| Feature             | Description                                                                                          |
-| ------------------- | ---------------------------------------------------------------------------------------------------- |
-| Invoice cloning     | Clone any invoice with optional overrides. Full lineage (parent → child) tracked on-chain.           |
-| Subscriptions       | Recurring invoice creation from stored templates for retainers and memberships.                      |
-| Fee tiers           | Volume-based platform fee discounts for high-volume creators.                                        |
-| Creator analytics   | On-chain stats: total raised, total released, unique payers, and average time-to-fund.               |
-
-### Safety
-
-| Feature          | Description                                                                                  |
-| ---------------- | -------------------------------------------------------------------------------------------- |
-| Circuit breaker  | Emergency pause that blocks all state-mutating calls, with no exemptions, until lifted.       |
-| Atomic settlement| Recipient payouts either all succeed in one transaction or the release reverts entirely.      |
-
----
-
-## Use Cases
-
-- 💸 **Freelancer team payments** — client pays once, the contract splits to the whole team.
-- 🍽️ **Group bills** — dinner, trips, and shared purchases split trustlessly.
-- 🌍 **Remittances** — send payments across LATAM & Africa with near-zero Stellar fees.
-- 🏢 **Business invoicing** — invoice clients with automatic multi-party settlement.
-- 🔒 **Milestone-based contracts** — release funds only when off-chain conditions are confirmed.
-
----
-
-## Tech Stack
-
-| Layer            | Technology                                     |
-| ---------------- | ---------------------------------------------- |
-| Smart contract   | Soroban (Rust, `soroban-sdk` 20)               |
-| Settlement asset | USDC via Stellar Asset Contract (SAC)          |
-| Blockchain       | Stellar (Soroban RPC, Horizon)                 |
-| Wallet auth      | Freighter API, SEP-0007 signing                |
-| Oracle           | Soroban price-oracle contract (pluggable)      |
-| Frontend         | React + Vite + TailwindCSS *(planned)*         |
-| Indexer          | Contract events → off-chain analytics *(planned)* |
-
----
-
-## Why Stellar + Soroban?
-
-- **Cheap, fast settlement** — Stellar finality in 3–5s with fees of fractions of a cent makes many-recipient payouts economical.
-- **Native stablecoins** — Circle-issued USDC on Stellar via the Stellar Asset Contract, usable directly from Soroban.
-- **Atomic multi-transfer** — a single Soroban invocation can pay every recipient or revert as a whole.
-- **Authorization framework** — `require_auth` gives per-signer authorization for multi-sig release without custom signature plumbing.
-- **Contract-to-contract calls** — oracles, bridges, and token contracts compose cleanly on-chain.
-
----
-
-## On-chain vs Off-chain
-
-| Concern                   | On-chain                                | Off-chain                          |
-| ------------------------- | --------------------------------------- | ---------------------------------- |
-| Escrowed funds            | Yes (held by contract)                  | —                                  |
-| Contribution accounting   | Yes                                     | —                                  |
-| Release / refund logic    | Yes (contract-enforced)                 | —                                  |
-| Co-signer approvals       | Yes (`require_auth`)                     | —                                  |
-| Invoice metadata / notes  | Hash anchored on-chain                   | Stored/rendered off-chain          |
-| Payment-channel vouchers  | Final settlement on-chain                | Signed vouchers exchanged off-chain|
-| Analytics dashboards      | Source events on-chain                   | Aggregated/rendered off-chain      |
-
----
-
-## Project Status
-
-> ⚠️ **Early / work in progress.** The feature set above is the target design. The on-chain contract in `contracts/whisperstell` currently implements group and role anchoring (`create_group`, `set_group_role`) and is being extended toward the settlement model described here. Treat unchecked roadmap items as not-yet-implemented.
-
-### Roadmap
-
-**v0.1 — Foundation** *(in progress)*
-- [x] On-chain group + role anchoring
-- [ ] `create_invoice` (recipients, amounts, deadline)
-- [ ] `pay_share` — escrow USDC contributions
-- [ ] Automatic routing on full funding
-- [ ] `refund` after unfunded deadline
-
-**v0.2 — Advanced release**
-- [ ] N-of-M multi-sig release
-- [ ] Staged, time-locked tranches
-- [ ] Scheduled release timestamp
-- [ ] Oracle-priced funding targets
-
-**v0.3 — Privacy & scale**
-- [ ] Confidential payment commitments
-- [ ] Payment channels
-- [ ] Cross-chain bridge contributions
-
-**v0.4 — Creator economy**
-- [ ] Invoice cloning with lineage
-- [ ] Subscription templates
-- [ ] Volume-based fee tiers
-- [ ] On-chain creator analytics
-
-**v0.5 — Safety & launch**
-- [ ] Circuit breaker
-- [ ] Full test coverage + audit
-- [ ] Frontend + event indexer
-
----
-
-## Repository Layout
-
-```
-.
-├── contracts/
-│   └── whisperstell/       # Soroban contract (Rust)
-│       ├── src/lib.rs
-│       └── Cargo.toml
-├── frontend/               # Web client (planned)
+```text
+/
+├── apps/
+│   ├── web/              # Next.js frontend
+│   └── api/              # Node.js backend API
+├── contracts/            # Soroban smart contracts (Rust)
+├── packages/             # Shared utilities and types
+├── scripts/              # Deployment and automation scripts
+├── tests/                # Integration and E2E tests
 └── README.md
 ```
 
 ---
 
-## Getting Started
+## 🛠 Setup Instructions
 
 ### Prerequisites
 
-- Rust with the `wasm32-unknown-unknown` target
-- [Stellar CLI](https://developers.stellar.org/docs/tools/cli) (`stellar`)
-- A funded Stellar testnet account + [Freighter](https://www.freighter.app/)
+Before you begin, ensure you have the following installed:
 
-### Build the contract
+- **Node.js** (v18 or higher) - [Download](https://nodejs.org/)
+- **npm** or **yarn** - Comes with Node.js
+- **Rust** (stable toolchain) - [Install](https://rustup.rs/)
+- **Soroban / Stellar CLI** - Instructions below
+- **Stellar testnet account** - We'll create this in setup
+
+### Installation Overview
+
+1. Clone the repository
+2. Set up smart contracts
+3. Set up backend API
+4. Set up frontend
+5. Run tests
+
+---
+
+## 📦 1. Clone the Repository
 
 ```bash
-cd contracts/whisperstell
-cargo build --release --target wasm32-unknown-unknown
+git clone https://github.com/your-org/whisperstell.git
+cd whisperstell
 ```
 
-### Test
+---
+
+## 🔗 2. Smart Contracts Setup (Soroban)
+
+### Install Stellar CLI
 
 ```bash
-cargo test
+cargo install --locked stellar-cli --features opt
 ```
 
-### Deploy to testnet
+Or use the install script:
+
+```bash
+curl -fsSL https://github.com/stellar/stellar-cli/raw/main/install.sh | sh
+```
+
+Verify installation:
+
+```bash
+stellar --version
+```
+
+### Configure Stellar Testnet
+
+```bash
+stellar network add --global testnet \
+  --rpc-url https://soroban-testnet.stellar.org:443 \
+  --network-passphrase "Test SDF Network ; September 2015"
+```
+
+### Generate Identity & Fund Account
+
+```bash
+stellar keys generate --global alice --network testnet
+```
+
+Get your address:
+
+```bash
+stellar keys address alice
+```
+
+Fund your account using Friendbot:
+
+```bash
+curl "https://friendbot.stellar.org?addr=$(stellar keys address alice)"
+```
+
+Verify balance:
+
+```bash
+stellar account balance --id alice --network testnet
+```
+
+### Add the wasm target & build
+
+```bash
+rustup target add wasm32-unknown-unknown
+cd contracts
+cargo build --target wasm32-unknown-unknown --release
+```
+
+### Deploy Contracts
 
 ```bash
 stellar contract deploy \
   --wasm target/wasm32-unknown-unknown/release/whisperstell.wasm \
-  --source <your-key> \
+  --source alice \
   --network testnet
+```
+
+Save the contract ID output - you'll need it for frontend and backend setup.
+
+### Initialize Contract (if required)
+
+```bash
+stellar contract invoke \
+  --id YOUR_CONTRACT_ID \
+  --source alice \
+  --network testnet \
+  -- initialize \
+  --admin $(stellar keys address alice)
+```
+
+> **Note:** The admin role's powers are limited and documented in the Trust & Security Model below. It can pause new activity in an emergency but **cannot** move user funds or block refunds and withdrawals.
+
+---
+
+## 🖥 3. Backend Setup (Node.js API)
+
+```bash
+cd apps/api
+npm install
+```
+
+### Create Environment File
+
+Create `.env` in `apps/api/`:
+
+```env
+PORT=3001
+NODE_ENV=development
+
+# Stellar Network
+STELLAR_NETWORK=testnet
+SOROBAN_RPC_URL=https://soroban-testnet.stellar.org
+HORIZON_URL=https://horizon-testnet.stellar.org
+
+# Contract
+CONTRACT_ID=YOUR_DEPLOYED_CONTRACT_ID
+
+# Anchor / on-ramp (SEP-24 hosted deposit/withdraw)
+ANCHOR_HOME_DOMAIN=your-anchor-domain
+ANCHOR_ASSET_CODE=USDC
+
+# Database (if using)
+DATABASE_URL=postgresql://user:password@localhost:5432/whisperstell
+
+# Optional
+REDIS_URL=redis://localhost:6379
+```
+
+### Run Database Migrations (if applicable)
+
+```bash
+npm run migrate
+```
+
+### Start Backend Server
+
+```bash
+npm run dev
+```
+
+Backend should now be running at `http://localhost:3001`
+
+### Verify Backend
+
+```bash
+curl http://localhost:3001/health
 ```
 
 ---
 
-## Contributing
+## 🌐 4. Frontend Setup (Next.js)
 
-Pull requests are welcome. For major features, open an issue first to discuss scope.
+```bash
+cd apps/web
+npm install
+```
 
-All contributions must:
+### Create Environment File
 
-- Build with `cargo build --release --target wasm32-unknown-unknown`
-- Pass `cargo test` with tests for new contract logic
-- Keep escrow invariants intact — funds in must always equal funds owed
-- Be reviewed by at least one maintainer before merge
+Create `.env.local` in `apps/web/`:
+
+```env
+# Stellar Network
+NEXT_PUBLIC_STELLAR_NETWORK=testnet
+NEXT_PUBLIC_SOROBAN_RPC_URL=https://soroban-testnet.stellar.org
+NEXT_PUBLIC_HORIZON_URL=https://horizon-testnet.stellar.org
+
+# Contract
+NEXT_PUBLIC_CONTRACT_ID=YOUR_DEPLOYED_CONTRACT_ID
+
+# Backend API
+NEXT_PUBLIC_API_URL=http://localhost:3001
+
+# Passkey smart wallet (optional, for passwordless onboarding)
+NEXT_PUBLIC_PASSKEY_RELAYER_URL=your_relayer_url
+```
+
+### Run Development Server
+
+```bash
+npm run dev
+```
+
+Frontend should now be running at `http://localhost:3000`
+
+### Build for Production
+
+```bash
+npm run build
+npm start
+```
 
 ---
 
-## License
+## 🧪 5. Running Tests
 
-MIT License — free to use, fork, and deploy.
+### Contract Tests
+
+```bash
+cd contracts
+cargo test
+```
+
+### Backend Tests
+
+```bash
+cd apps/api
+npm test
+```
+
+Run with coverage:
+
+```bash
+npm run test:coverage
+```
+
+### Frontend Tests
+
+```bash
+cd apps/web
+npm test
+```
+
+Run E2E tests (requires running backend and deployed contracts):
+
+```bash
+npm run test:e2e
+```
+
+### Integration Tests
+
+From project root:
+
+```bash
+npm run test:integration
+```
 
 ---
 
-## Acknowledgements
+## 🌍 Network Configuration
 
-- [Stellar Development Foundation](https://stellar.org) — blockchain infrastructure
-- [Soroban](https://soroban.stellar.org) — smart contract platform
-- [Circle](https://www.circle.com/usdc) — USDC stablecoin
-- [Freighter](https://www.freighter.app) — Stellar browser wallet
+### Testnet
+
+- **Network Passphrase:** `Test SDF Network ; September 2015`
+- **RPC URL:** `https://soroban-testnet.stellar.org:443`
+- **Horizon URL:** `https://horizon-testnet.stellar.org`
+- **Friendbot:** `https://friendbot.stellar.org`
+
+### Contract Addresses (Testnet)
+
+- **Main Invoice Contract:** `CXXXXXX...` (Update after deployment)
+- **USDC Token:** `CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA`
+
+---
+
+## 🔒 Trust & Security Model
+
+WhisperStell is **minimally trusted, not zero-trust** — being explicit about this is the point.
+
+**Enforced by the contract (no trust required):**
+
+- Escrowed funds can only move per the invoice's on-chain rules — not even the creator can withdraw the pot.
+- Refunds after an unfunded deadline are **permissionless**: any payer can pull their own funds back, no admin needed.
+- Payouts are **pull-based**, so a single recipient without a USDC trustline (or a hostile one) can't freeze everyone else's funds.
+- The circuit breaker can pause *new* invoices and contributions but can **never** block refunds or withdrawals.
+
+**Explicitly trusted components (opt-in, disclosed):**
+
+- Oracle-gated / scheduled release trusts the named oracle adapter for its condition.
+- Cross-chain contributions trust the bridge attestation set — use only for amounts you'd trust that bridge with.
+- Fee-tier and analytics are conveniences, not value-bearing guarantees.
+
+> Not yet audited. Do not use on mainnet with real funds until the external audit milestone lands.
+
+---
+
+## 💼 Business Model
+
+WhisperStell's fees are transparent and on-chain:
+
+- **Small settlement fee** taken only when an invoice successfully releases — a percentage of the routed amount, never of escrowed principal held for refund.
+- **Optional per-invoice / template fee** for advanced features like subscriptions and multi-sig.
+- **Volume-based discounts** for high-volume creators.
+
+No token is required to use WhisperStell. Any future governance mechanism would be introduced only after real usage exists.
+
+---
+
+## 🐛 Troubleshooting
+
+### Contract Deployment Fails
+
+**Error:** `insufficient balance`
+
+**Solution:** Fund your account using Friendbot:
+
+```bash
+curl "https://friendbot.stellar.org?addr=$(stellar keys address alice)"
+```
+
+### Frontend Can't Connect to Wallet
+
+**Error:** `Failed to connect wallet`
+
+**Solution:**
+
+1. Ensure you have a supported wallet installed (Freighter or a passkey smart wallet)
+2. Switch wallet to Testnet network
+3. Check that `NEXT_PUBLIC_STELLAR_NETWORK=testnet` in `.env.local`
+
+### Backend Can't Index Events
+
+**Error:** `RPC connection timeout`
+
+**Solution:**
+
+1. Verify RPC URL is correct in `.env`
+2. Check Stellar testnet status: https://status.stellar.org
+3. Try alternative RPC: `https://soroban-testnet.stellar.org:443`
+
+### Contract Build Fails
+
+**Error:** `wasm32-unknown-unknown target not found`
+
+**Solution:** Add wasm target:
+
+```bash
+rustup target add wasm32-unknown-unknown
+```
+
+### Tests Failing
+
+**Error:** `Network connection error`
+
+**Solution:** Ensure contracts are deployed and environment variables are set correctly in test config.
+
+---
+
+## 📚 Documentation & Resources
+
+- **Stellar Documentation:** [developers.stellar.org](https://developers.stellar.org/docs/build/smart-contracts)
+- **Soroban Docs:** [developers.stellar.org/docs/build/smart-contracts](https://developers.stellar.org/docs/build/smart-contracts)
+- **Anchors & On/Off-Ramps:** [developers.stellar.org/docs/learn/fundamentals/anchors](https://developers.stellar.org/docs/learn/fundamentals/anchors)
+- **Passkey Smart Wallets:** [github.com/stellar/passkey-kit](https://github.com/stellar/passkey-kit)
+- **Soroban Examples:** [github.com/stellar/soroban-examples](https://github.com/stellar/soroban-examples)
+
+---
+
+## 🤝 Contributing
+
+See our detailed [CONTRIBUTING.md](CONTRIBUTING.md) for coding standards (Rust/Soroban, TypeScript), Git workflow, naming conventions, and full PR process.
+
+---
+
+## Future
+
+- Confidential payment amounts with range proofs
+- Payment channels with a dispute/challenge window
+- Additional anchors & cash on/off-ramps
+- Cross-chain contributions behind an attested bridge
+- Invoice cloning, subscriptions & recurring templates
+- Mobile app (Flutter)
+- Progressive decentralization (timelock → community input)
+- Advanced creator analytics dashboard
+
+---
+
+## 📄 License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+---
